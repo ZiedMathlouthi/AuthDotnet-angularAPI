@@ -6,6 +6,10 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Text.RegularExpressions;
 using System.Text;
+using System.IdentityModel.Tokens.Jwt;
+using System;
+using System.Security.Claims;
+using Microsoft.IdentityModel.Tokens;
 
 namespace AngularAuthAPI.Controllers
 {
@@ -23,17 +27,20 @@ namespace AngularAuthAPI.Controllers
         {
             if (userObj == null) { return BadRequest(); }
 
-            var user = await _authContext.Users.FirstOrDefaultAsync(x => x.Username == userObj.Username );
+            var user = await _authContext.Users.FirstOrDefaultAsync(x => x.Username == userObj.Username);
 
             if (user == null) { return NotFound(new { Message = "User not found!" }); }
 
-            if(!PasswordHasher.VerifyPassword(userObj.Password, user.Password))
+            if (!PasswordHasher.VerifyPassword(userObj.Password, user.Password))
             {
-                return BadRequest(new {message = "Password is incorrect "});
+                return BadRequest(new { message = "Password is incorrect " });
             }
+
+            user.Token = CreateJwt(user);
 
             return Ok(new
             {
+                Token = user.Token,
                 Message = "Login Success!"
             });
         }
@@ -62,7 +69,7 @@ namespace AngularAuthAPI.Controllers
             {
                 Message = "User Registred !"
             });
-          
+
         }
         private async Task<bool> CheckUsernameExistAsync(string username)
         {
@@ -89,5 +96,35 @@ namespace AngularAuthAPI.Controllers
 
             return sb.ToString();
         }
+
+        private string CreateJwt(User userObj)
+        {
+            JwtSecurityTokenHandler jwtTokenHandler = new();
+            var key = Encoding.ASCII.GetBytes("veryverysecret.....");
+            var identity = new ClaimsIdentity(new Claim[] {
+                new Claim(ClaimTypes.Role, userObj.Role),
+                new Claim(ClaimTypes.Name, $"{userObj.Username}")
+            });
+
+            var credentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256);
+
+            var tokenDescriptor = new SecurityTokenDescriptor
+            {
+                Subject = identity,
+                SigningCredentials = credentials,
+                Expires = DateTime.UtcNow.AddSeconds(10)
+            };
+
+            var token = jwtTokenHandler.CreateToken(tokenDescriptor);
+
+            return jwtTokenHandler.WriteToken(token);
+        }
+
+        [HttpGet]
+        public async Task<ActionResult<User>> GetAllUsers()
+        {
+            return Ok(await _authContext.Users.ToListAsync());
+        }
     }
+
 }
